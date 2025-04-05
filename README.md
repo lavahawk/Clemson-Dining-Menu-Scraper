@@ -44,7 +44,7 @@ run the script through python
 python Clemson_DiningHallMenu
 ```
 ## Home Assistant Integration (Optional)
-  1. Create a .env file in the script directory:
+  1. Create a **.env** file in the script directory:
 ```
     HA_URL=your_home_assistant_url
     HA_TOKEN=your_long_lived_access_token
