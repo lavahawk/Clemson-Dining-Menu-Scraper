@@ -49,8 +49,12 @@ python Clemson_DiningHallMenu
     HA_URL=your_home_assistant_url
     HA_TOKEN=your_long_lived_access_token
 ```
-  3. Toggle Home Assistant integration in the script:
+  2. Toggle Home Assistant integration in the script:
+   ```
     ENABLE_HOME_ASSISTANT = True  # Set to False to disable
+   ```
+  3. Add the yaml code included in the Ha_Configuration file to your home assistant configuration file.
+
 
 
 
