@@ -22,10 +22,10 @@ A lightweight Python script that scrapes and displays real-time menu information
   Sends menu data to Home Assistant if enabled.
 
 - **Memory-Optimized**  
-  Runs headless, minimizing system resource usage.
+  Runs headless, and without a lot of bloat minimizing system resource usage.
 
 - **Common Item Filtering**  
-  Skips repetitive or filler menu items to keep displays succinct.
+  Skips repetitive or filler menu items to keep displays succinct. like the salad bar fr cuz we dont want to see yogurt 123325 times when we know its there everyday.
 
 - **Scheduled Updates**  
   Automates scraping around meal transitions.
