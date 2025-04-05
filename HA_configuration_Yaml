@@ -1,0 +1,22 @@
+template:
+  - sensor:
+      - name: "Shitter Dining Hall"
+        unique_id: dining_hall_shitter_menu
+        state: "{{ states('sensor.dining_hall_shitter') }}"
+        attributes:
+          menu: "{{ state_attr('sensor.dining_hall_shitter', 'menu_items') }}"
+          last_updated: "{{ state_attr('sensor.dining_hall_shitter', 'last_updated') }}"
+          
+      - name: "McAlister Dining Hall"
+        unique_id: dining_hall_mcalister_menu
+        state: "{{ states('sensor.dining_hall_mcalister') }}"
+        attributes:
+          menu: "{{ state_attr('sensor.dining_hall_mcalister', 'menu_items') }}"
+          last_updated: "{{ state_attr('sensor.dining_hall_mcalister', 'last_updated') }}"
+          
+      - name: "Douthit Dining Hall"
+        unique_id: dining_hall_douthit_menu
+        state: "{{ states('sensor.dining_hall_douthit') }}"
+        attributes:
+          menu: "{{ state_attr('sensor.dining_hall_douthit', 'menu_items') }}"
+          last_updated: "{{ state_attr('sensor.dining_hall_douthit', 'last_updated') }}"

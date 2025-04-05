@@ -1,0 +1,4 @@
+- Scrape time open data instead of hardcoding time
+- AI parsing to choose best dining hall based on database of food rankings
+    - need to create running ratings of food
+- Add seamless run in background on server hardware and allow for linux or other operating system functionality.

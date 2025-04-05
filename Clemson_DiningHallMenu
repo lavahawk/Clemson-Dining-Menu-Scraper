@@ -1,0 +1,301 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+import schedule
+import time
+from datetime import datetime
+import requests
+import json
+import os
+from dotenv import load_dotenv
+from typing import Dict, List, TypedDict
+
+class MenuData(TypedDict):
+    location: str
+    status: str
+    meal_period: str
+    menu_items: List[str]
+    last_updated: str
+
+# Configuration
+ENABLE_HOME_ASSISTANT = True  # Toggle this to False to disable Home Assistant integration
+
+# Modify the Home Assistant setup section
+if ENABLE_HOME_ASSISTANT:
+    # Load environment variables for Home Assistant configuration
+    load_dotenv()
+
+    # Access environment variables
+    HA_URL = os.getenv('HA_URL')
+    HA_TOKEN = os.getenv('HA_TOKEN')
+
+    # Verify environment variables are loaded
+    if not HA_URL or not HA_TOKEN:
+        raise ValueError("Missing required environment variables. Please check your .env file.")
+
+    HEADERS = {
+        'Authorization': f'Bearer {HA_TOKEN}',
+        'Content-Type': 'application/json',
+    }
+
+def clean_menu_item(text):
+    # Remove "Add ... to Meal Calculator" portion
+    if "Add" in text:
+        return text.split("Add")[0].strip()
+    return text
+
+def is_common_item(item):
+    # List of common items to filter out
+    common_items = [
+        "yogurt", "granola", "cream cheese", "melon", "cranberries", 
+        "pineapple", "grapes", "pickle", "lettuce", "onion", "tomato",
+        "cheese", "ham", "swiss", "turkey", "hummus", "salsa", "carrot",
+        "celery", "croutons", "spinach", "cucumber", "bell pepper",
+        "salad mix", "egg", "tuna", "(1 ozw)", "(1 cup)", "(1 slice)",
+        "(1 tablespoon)", "( 1/4 cup)", "(2 slice)", "(2 tablespoon)",
+        "classic cheese pizza", "pepperoni pizza"
+    ]
+    
+    item_lower = item.lower()
+    return any(common in item_lower for common in common_items)
+
+def get_menu(url, location_name):
+    options = Options()
+    # Headless mode and basic optimizations
+    options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--disable-software-rasterizer")
+    
+    # Additional options to suppress WebGL and GPU errors
+    options.add_argument("--ignore-gpu-blocklist")
+    options.add_argument("--disable-gpu-sandbox")
+    options.add_argument("--disable-web-security")
+    options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    
+    # Memory and performance optimizations
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-images")
+    options.add_argument("--blink-settings=imagesEnabled=false")
+    options.add_argument("--memory-pressure-off")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--silent")
+    
+    # Set log level to suppress warnings
+    options.add_argument("--log-level=3")
+    
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    driver.set_window_size(1024, 768)  # Set minimal window size
+    
+    try:
+        driver.get(url)
+        # Use explicit wait instead of time.sleep
+        wait = WebDriverWait(driver, 10)
+        menu_items = wait.until(
+            EC.presence_of_all_elements_located((By.XPATH, "//li[@data-testid='product-card']//button"))
+        )
+        
+        menu = []
+        for item in menu_items:
+            cleaned_item = clean_menu_item(item.text)
+            if cleaned_item and not is_common_item(cleaned_item):
+                menu.append(cleaned_item)
+                
+    except Exception as e:
+        print(f"Error fetching menu for {location_name}: {str(e)}")
+        menu = []
+        
+    finally:
+        driver.quit()
+        
+    return menu
+
+def get_current_meal():
+    now = datetime.now()
+    current_time = now.time()
+    current_day = now.strftime('%a')
+    
+    # Define meal transition times
+    breakfast_start = datetime.strptime("7:00", "%H:%M").time()
+    breakfast_end = datetime.strptime("10:30", "%H:%M").time()
+    lunch_start = breakfast_end
+    lunch_end = datetime.strptime("16:30", "%H:%M").time()
+    dinner_start = lunch_end
+    dinner_end = datetime.strptime("21:00", "%H:%M").time()
+    
+    # Weekend adjustments
+    if current_day in ['Sat', 'Sun']:
+        breakfast_start = datetime.strptime("8:00", "%H:%M").time()
+        
+    if current_time >= breakfast_start and current_time < breakfast_end:
+        return "Breakfast"
+    elif current_time >= lunch_start and current_time < lunch_end:
+        return "Lunch"
+    elif current_time >= dinner_start and current_time < dinner_end:
+        return "Dinner"
+    else:
+        return "Closed"
+
+def send_to_ha(location, menu_data, current_meal):
+    """Send menu data to Home Assistant"""
+    if not ENABLE_HOME_ASSISTANT:
+        return
+        
+    entity_id = f"sensor.dining_hall_{location.lower()}"
+    
+    state = current_meal
+    attributes = {
+        "menu_items": menu_data,
+        "friendly_name": f"{location} Dining Hall",
+        "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+    
+    data = {
+        "state": state,
+        "attributes": attributes
+    }
+    
+    try:
+        response = requests.post(
+            f"{HA_URL}/api/states/{entity_id}",
+            headers=HEADERS,
+            json=data
+        )
+        response.raise_for_status()
+        print(f"Successfully updated {location} menu in Home Assistant")
+    except Exception as e:
+        print(f"Error sending data to Home Assistant for {location}: {str(e)}")
+
+def main() -> Dict[str, MenuData]:
+    # Define dining hall URLs
+    locations = {
+        "Shitter": "https://clemson.campusdish.com/en/locationsandmenus/schilletterdininghall/",
+        "McAlister": "https://clemson.campusdish.com/en/locationsandmenus/dishatmcalisterdining/",
+        "Douthit": "https://clemson.campusdish.com/LocationsAndMenus/CommunityHub"
+    }
+    
+    current_meal = get_current_meal()
+    print(f"\n=== Clemson Dining Hall Menus - {current_meal} ===")
+    print(f"Time: {datetime.now().strftime('%I:%M %p')}")
+    
+    # Dictionary to store all menu data
+    all_menus: Dict[str, MenuData] = {}
+    
+    for location, url in locations.items():
+        # Skip closed locations based on time and day
+        if should_skip_location(location):
+            menu = []
+            status = "Closed"
+        else:
+            print(f"\nFetching menu for {location}...")
+            menu = get_menu(url, location)
+            status = current_meal
+        
+        # Store menu data
+        menu_data: MenuData = {
+            "location": location,
+            "status": status,
+            "meal_period": current_meal,
+            "menu_items": menu,
+            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }
+        
+        all_menus[location] = menu_data
+            
+        # Only send to Home Assistant if enabled
+        if ENABLE_HOME_ASSISTANT:
+            send_to_ha(location, menu, status)
+        
+        # Print menu for console output
+        print(f"\n{location} Dining Hall Menu:")
+        print("-" * 30)
+        for item in menu:
+            print(f"• {item}")
+    
+    return all_menus
+
+def should_skip_location(location):
+    now = datetime.now()
+    current_day = now.strftime('%a')
+    current_time = now.time()
+    
+    if location == "Douthit":
+        # Douthit specific rules
+        # Closed on weekends
+        if current_day in ['Sat', 'Sun']:
+            return True
+        # No breakfast service
+        breakfast_end = datetime.strptime("11:00", "%H:%M").time()
+        if current_time < breakfast_end:
+            return True
+        # Closed between lunch and dinner
+        lunch_end = datetime.strptime("14:30", "%H:%M").time()
+        dinner_start = datetime.strptime("16:30", "%H:%M").time()
+        if current_time > lunch_end and current_time < dinner_start:
+            return True
+        # Friday dinner ends at 8:00 PM
+        if current_day == 'Fri' and current_time >= datetime.strptime("20:00", "%H:%M").time():
+            return True
+        # Regular dinner ends at 9:00 PM
+        if current_time >= datetime.strptime("21:00", "%H:%M").time():
+            return True
+    
+    elif location == "Shitter":
+        # Weekend brunch rules for Schilletter
+        if current_day in ['Sat', 'Sun']:
+            brunch_start = datetime.strptime("11:30", "%H:%M").time()
+            if current_time < brunch_start:
+                return True
+            # Saturday closes earlier
+            if current_day == 'Sat' and current_time >= datetime.strptime("19:00", "%H:%M").time():
+                return True
+            # Friday closes at 8:00 PM
+            if current_day == 'Fri' and current_time >= datetime.strptime("20:00", "%H:%M").time():
+                return True
+    
+    elif location == "McAlister":
+        # Weekend breakfast starts later
+        if current_day in ['Sat', 'Sun']:
+            breakfast_start = datetime.strptime("8:00", "%H:%M").time()
+            if current_time < breakfast_start:
+                return True
+            # Friday and Saturday close at 8:00 PM
+            if current_day in ['Fri', 'Sat'] and current_time >= datetime.strptime("20:00", "%H:%M").time():
+                return True
+    
+    return False
+
+def schedule_jobs():
+    def run_and_store():
+        menus = main()
+        # You can now do something with the menus data, like:
+        # - Save to a file
+        # - Update a global variable
+        # - Send to a web server
+        return menus
+    
+    # Schedule meal transitions
+    schedule.every().day.at("07:00").do(run_and_store)  # Breakfast start
+    schedule.every().day.at("10:30").do(run_and_store)  # Lunch start
+    schedule.every().day.at("16:30").do(run_and_store)  # Dinner start
+    
+    # Weekend schedule
+    schedule.every().saturday.at("08:00").do(run_and_store)
+    schedule.every().sunday.at("08:00").do(run_and_store)
+    
+    print("Scheduler started. Waiting for next meal transition...")
+    
+    # Store initial menu data
+    current_menus = run_and_store()
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+if __name__ == "__main__":
+    schedule_jobs()
