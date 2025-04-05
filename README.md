@@ -1,7 +1,6 @@
 # Clemson Dining Hall Menu Scraper
 
 A lightweight Python script that scrapes and displays real-time menu information from Clemson University's dining halls, with optional Home Assistant integration.
-https://cdn.discordapp.com/attachments/624078376994471958/1357728526123405443/MWh5Tij.png?ex=67f1eb7a&is=67f099fa&hm=dbb21419c413fbb6765e1662ef0e4f0546107a166beb0d9ec19a2f80f7046cb3&
 ---
 
 ## Features
